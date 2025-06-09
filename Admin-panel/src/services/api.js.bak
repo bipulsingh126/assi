@@ -1,8 +1,11 @@
 // API base URL
 const API_URL = 'http://localhost:5001/api';
 
-// Helper functions for localStorage
-const getLocalStorageProducts = () => {
+// Helper function to get auth token
+const getToken = () => localStorage.getItem('authToken');
+
+// Helper functions for localStorage product management
+const getLocalProducts = () => {
     try {
         const products = localStorage.getItem('products');
         return products ? JSON.parse(products) : [];
@@ -12,16 +15,13 @@ const getLocalStorageProducts = () => {
     }
 };
 
-const saveLocalStorageProducts = (products) => {
+const saveLocalProducts = (products) => {
     try {
         localStorage.setItem('products', JSON.stringify(products));
     } catch (error) {
         console.error('Error saving products to localStorage:', error);
     }
 };
-
-// Helper function to get auth token
-const getToken = () => localStorage.getItem('authToken');
 
 // Helper function for API requests
 const apiRequest = async (endpoint, method = 'GET', data = null) => {
@@ -89,12 +89,13 @@ export const productsAPI = {
     getProducts: async () => {
         try {
             const response = await apiRequest('/products');
-            // Save products to localStorage for offline use
-            saveLocalStorageProducts(response.data);
+            // If API call is successful, update localStorage
+            saveLocalProducts(response.data || []);
             return response;
         } catch (error) {
-            // Return products from localStorage if API call fails
-            const localProducts = getLocalStorageProducts();
+            console.log('Using localStorage fallback for products');
+            // Return products from localStorage if API fails
+            const localProducts = getLocalProducts();
             return { data: localProducts };
         }
     },
@@ -104,40 +105,33 @@ export const productsAPI = {
             const response = await apiRequest(`/products/${id}`);
             return response;
         } catch (error) {
-            // Try to find product in localStorage
-            const localProducts = getLocalStorageProducts();
+            // Find product in localStorage if API fails
+            const localProducts = getLocalProducts();
             const product = localProducts.find(p => p._id === id || p.id === id);
-
             if (product) {
                 return { data: product };
             }
-            throw error;
+            throw new Error('Product not found');
         }
     },
 
     createProduct: async (productData) => {
         try {
-            // Generate a temporary ID for new product
+            const response = await apiRequest('/products', 'POST', productData);
+            // Update localStorage with new product
+            const localProducts = getLocalProducts();
+            saveLocalProducts([...localProducts, response.data]);
+            return response;
+        } catch (error) {
+            // Create product in localStorage if API fails
+            const localProducts = getLocalProducts();
             const newProduct = {
                 ...productData,
-                _id: `temp_${Date.now()}`,
+                _id: `local-${Date.now()}`, // Generate temporary ID
                 createdAt: new Date().toISOString()
             };
-
-            try {
-                const response = await apiRequest('/products', 'POST', productData);
-                // Update localStorage with the new product
-                const localProducts = getLocalStorageProducts();
-                saveLocalStorageProducts([...localProducts, response.data]);
-                return response;
-            } catch (error) {
-                // Save to localStorage if API call fails
-                const localProducts = getLocalStorageProducts();
-                saveLocalStorageProducts([...localProducts, newProduct]);
-                return { data: newProduct };
-            }
-        } catch (error) {
-            throw error;
+            saveLocalProducts([...localProducts, newProduct]);
+            return { data: newProduct };
         }
     },
 
@@ -145,20 +139,20 @@ export const productsAPI = {
         try {
             const response = await apiRequest(`/products/${id}`, 'PUT', productData);
             // Update product in localStorage
-            const localProducts = getLocalStorageProducts();
+            const localProducts = getLocalProducts();
             const updatedProducts = localProducts.map(p =>
-                (p._id === id || p.id === id) ? response.data : p
+                (p._id === id || p.id === id) ? { ...p, ...response.data } : p
             );
-            saveLocalStorageProducts(updatedProducts);
+            saveLocalProducts(updatedProducts);
             return response;
         } catch (error) {
-            // Update in localStorage if API call fails
-            const localProducts = getLocalStorageProducts();
-            const updatedProduct = { ...productData, updatedAt: new Date().toISOString() };
+            // Update product in localStorage if API fails
+            const localProducts = getLocalProducts();
             const updatedProducts = localProducts.map(p =>
-                (p._id === id || p.id === id) ? updatedProduct : p
+                (p._id === id || p.id === id) ? { ...p, ...productData } : p
             );
-            saveLocalStorageProducts(updatedProducts);
+            saveLocalProducts(updatedProducts);
+            const updatedProduct = updatedProducts.find(p => p._id === id || p.id === id);
             return { data: updatedProduct };
         }
     },
@@ -166,14 +160,16 @@ export const productsAPI = {
     deleteProduct: async (id) => {
         try {
             const response = await apiRequest(`/products/${id}`, 'DELETE');
-            // Remove from localStorage
-            const localProducts = getLocalStorageProducts();
-            saveLocalStorageProducts(localProducts.filter(p => p._id !== id && p.id !== id));
+            // Remove product from localStorage
+            const localProducts = getLocalProducts();
+            const filteredProducts = localProducts.filter(p => p._id !== id && p.id !== id);
+            saveLocalProducts(filteredProducts);
             return response;
         } catch (error) {
-            // Remove from localStorage if API call fails
-            const localProducts = getLocalStorageProducts();
-            saveLocalStorageProducts(localProducts.filter(p => p._id !== id && p.id !== id));
+            // Remove product from localStorage if API fails
+            const localProducts = getLocalProducts();
+            const filteredProducts = localProducts.filter(p => p._id !== id && p.id !== id);
+            saveLocalProducts(filteredProducts);
             return { success: true };
         }
     }

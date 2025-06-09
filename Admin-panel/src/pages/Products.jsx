@@ -30,7 +30,8 @@ const BRANDS = [
 
 const CATEGORIES = [
   'Engine Parts', 'Exterior', 'Interior', 'Lighting', 'Wheels & Tires',
-  'Brakes', 'Suspension', 'Electrical', 'Accessories', 'Performance'
+  'Brakes', 'Suspension', 'Electrical', 'Accessories', 'Performance',
+  'Architectural', 'Industrial', 'Transportation', 'Custom'
 ];
 
 const SUB_CATEGORIES = {
@@ -43,13 +44,43 @@ const SUB_CATEGORIES = {
   'Suspension': ['Shocks', 'Springs', 'Struts', 'Control Arms', 'Bushings'],
   'Electrical': ['Batteries', 'Alternators', 'Starters', 'Sensors', 'Switches'],
   'Accessories': ['Floor Mats', 'Seat Covers', 'Audio', 'Navigation', 'Phone Mounts'],
-  'Performance': ['Exhaust', 'Intake', 'Tuning', 'Turbo', 'Superchargers']
+  'Performance': ['Exhaust', 'Intake', 'Tuning', 'Turbo', 'Superchargers'],
+  'Architectural': ['Channels', 'Window Frames', 'Door Sections', 'Structural Profiles'],
+  'Industrial': ['Heat Sinks', 'Machine Parts', 'Structural Components', 'Custom Extrusions'],
+  'Transportation': ['Automotive Parts', 'Railway Components', 'Marine Profiles'],
+  'Custom': ['Custom Profiles', 'Special Designs', 'Bespoke Solutions']
 };
 
 const CITIES = [
   'New York', 'Los Angeles', 'Chicago', 'Houston', 'Phoenix', 
   'Philadelphia', 'San Antonio', 'San Diego', 'Dallas', 'San Jose'
 ];
+
+// Helper function to sync products with frontend
+const syncProductsWithFrontend = (products) => {
+  try {
+    // Format products for frontend compatibility
+    const frontendProducts = products.map(product => ({
+      _id: product._id || product.id,
+      productName: product.name,
+      category: product.category,
+      sectionId: product.sectionId || `SKU-${Math.floor(Math.random() * 10000)}`,
+      productPic: product.images && product.images.length > 0 ? product.images[0] : '',
+      price: product.price,
+      a: product.dimensions?.a || '',
+      b: product.dimensions?.b || '',
+      t: product.dimensions?.t || '',
+      wtkgm: product.dimensions?.weight || '',
+      dieAvailable: product.dieAvailable || false
+    }));
+    
+    // Save to localStorage for frontend access
+    localStorage.setItem('products', JSON.stringify(frontendProducts));
+    console.log('Products synced with frontend:', frontendProducts.length);
+  } catch (error) {
+    console.error('Error syncing products with frontend:', error);
+  }
+};
 
 export default function Products() {
   const [products, setProducts] = useState([]);
@@ -73,7 +104,15 @@ export default function Products() {
       model: '',
       year: ''
     },
-    cityAvailability: []
+    cityAvailability: [],
+    sectionId: '',
+    dimensions: {
+      a: '',
+      b: '',
+      t: '',
+      weight: ''
+    },
+    dieAvailable: false
   });
   const [isEditing, setIsEditing] = useState(false);
   const [snackbar, setSnackbar] = useState({
@@ -90,6 +129,9 @@ export default function Products() {
       try {
         const response = await productsAPI.getProducts();
         setProducts(response.data);
+        
+        // Sync products with frontend
+        syncProductsWithFrontend(response.data);
       } catch (error) {
         console.error('Error fetching products:', error);
         setSnackbar({
@@ -119,7 +161,9 @@ export default function Products() {
       setCurrentProduct({
         ...product,
         vehicleCompatibility: product.vehicleCompatibility || { brand: '', model: '', year: '' },
-        cityAvailability: product.cityAvailability || []
+        cityAvailability: product.cityAvailability || [],
+        dimensions: product.dimensions || { a: '', b: '', t: '', weight: '' },
+        dieAvailable: product.dieAvailable || false
       });
       setImageUrls(product.images || []);
       setIsEditing(true);
@@ -141,7 +185,15 @@ export default function Products() {
           model: '',
           year: ''
         },
-        cityAvailability: []
+        cityAvailability: [],
+        sectionId: `SKU-${Math.floor(Math.random() * 10000)}`,
+        dimensions: {
+          a: '',
+          b: '',
+          t: '',
+          weight: ''
+        },
+        dieAvailable: false
       });
       setImageUrls([]);
       setIsEditing(false);
@@ -163,6 +215,16 @@ export default function Products() {
         : (name === 'price' || name === 'stock' || name === 'deliveryTime') 
           ? Number(value) 
           : value
+    });
+  };
+
+  const handleDimensionChange = (field, value) => {
+    setCurrentProduct({
+      ...currentProduct,
+      dimensions: {
+        ...currentProduct.dimensions,
+        [field]: value
+      }
     });
   };
 
@@ -227,12 +289,15 @@ export default function Products() {
     }
 
     try {
+      let updatedProducts;
+      
       if (isEditing) {
         // Update existing product
         const response = await productsAPI.updateProduct(currentProduct._id, currentProduct);
-        setProducts(products.map(p => 
+        updatedProducts = products.map(p => 
           p._id === currentProduct._id ? response.data : p
-        ));
+        );
+        setProducts(updatedProducts);
         setSnackbar({
           open: true,
           message: 'Product updated successfully',
@@ -241,13 +306,17 @@ export default function Products() {
       } else {
         // Add new product
         const response = await productsAPI.createProduct(currentProduct);
-        setProducts([...products, response.data]);
+        updatedProducts = [...products, response.data];
+        setProducts(updatedProducts);
         setSnackbar({
           open: true,
           message: 'Product added successfully',
           severity: 'success'
         });
       }
+      
+      // Sync updated products with frontend
+      syncProductsWithFrontend(updatedProducts);
       
       handleCloseDialog();
     } catch (error) {
@@ -262,7 +331,12 @@ export default function Products() {
   const handleDelete = async (id) => {
     try {
       await productsAPI.deleteProduct(id);
-      setProducts(products.filter(p => p._id !== id));
+      const updatedProducts = products.filter(p => p._id !== id);
+      setProducts(updatedProducts);
+      
+      // Sync updated products with frontend
+      syncProductsWithFrontend(updatedProducts);
+      
       setSnackbar({
         open: true,
         message: 'Product deleted successfully',
@@ -298,6 +372,15 @@ export default function Products() {
               />
               <TextField
                 margin="dense"
+                label="Section ID"
+                name="sectionId"
+                fullWidth
+                value={currentProduct.sectionId}
+                onChange={handleChange}
+                required
+              />
+              <TextField
+                margin="dense"
                 label="Price"
                 name="price"
                 type="number"
@@ -327,6 +410,18 @@ export default function Products() {
                   />
                 }
                 label="In Stock"
+                sx={{ mt: 2 }}
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={currentProduct.dieAvailable}
+                    onChange={handleChange}
+                    name="dieAvailable"
+                    color="primary"
+                  />
+                }
+                label="Die Available"
                 sx={{ mt: 2 }}
               />
             </Grid>
@@ -415,7 +510,7 @@ export default function Products() {
                 renderInput={(params) => (
                   <TextField
                     {...params}
-                    label="Main Category"
+                    label="Category"
                     margin="dense"
                     required
                   />
@@ -431,7 +526,6 @@ export default function Products() {
                     subCategory: value || ''
                   });
                 }}
-                disabled={!currentProduct.category}
                 renderInput={(params) => (
                   <TextField
                     {...params}
@@ -439,9 +533,9 @@ export default function Products() {
                     margin="dense"
                   />
                 )}
+                disabled={!currentProduct.category}
               />
-            </Grid>
-            <Grid item xs={12} md={6}>
+              
               <Autocomplete
                 options={BRANDS}
                 value={currentProduct.brand}
@@ -459,6 +553,47 @@ export default function Products() {
                   />
                 )}
               />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <Typography variant="subtitle1" sx={{ mb: 1 }}>Dimensions</Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={6}>
+                  <TextField
+                    margin="dense"
+                    label="A"
+                    fullWidth
+                    value={currentProduct.dimensions.a}
+                    onChange={(e) => handleDimensionChange('a', e.target.value)}
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField
+                    margin="dense"
+                    label="B"
+                    fullWidth
+                    value={currentProduct.dimensions.b}
+                    onChange={(e) => handleDimensionChange('b', e.target.value)}
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField
+                    margin="dense"
+                    label="T"
+                    fullWidth
+                    value={currentProduct.dimensions.t}
+                    onChange={(e) => handleDimensionChange('t', e.target.value)}
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField
+                    margin="dense"
+                    label="Weight (KG/M)"
+                    fullWidth
+                    value={currentProduct.dimensions.weight}
+                    onChange={(e) => handleDimensionChange('weight', e.target.value)}
+                  />
+                </Grid>
+              </Grid>
             </Grid>
           </Grid>
         );
